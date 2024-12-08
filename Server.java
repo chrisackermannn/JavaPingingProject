@@ -4,34 +4,30 @@ import java.util.*;
 
 public class Server {
     private static final int PORT = 2234;
-    private static final Map<String, String> users = new HashMap<>();
-    private static final List<ClientHandler> clients = new ArrayList<>();
+    private static final Map<String, String> USERS = new HashMap<>();
+    private static final Map<String, Socket> ACTIVE_CLIENTS = new HashMap<>();
+
+    static {
+        // Predefined users (username, password)
+        USERS.put("user1", "pass1");
+        USERS.put("user2", "pass2");
+    }
 
     public static void main(String[] args) {
-        users.put("user1", "password1");
-        users.put("user2", "password2");
-
         try (ServerSocket serverSocket = new ServerSocket(PORT)) {
-            System.out.println("Server started on port " + PORT);
-
+            System.out.println("Server started. Waiting for clients...");
             while (true) {
                 Socket clientSocket = serverSocket.accept();
-                System.out.println("Client connected.");
-                ClientHandler handler = new ClientHandler(clientSocket);
-                clients.add(handler);
-                new Thread(handler).start();
+                new ClientHandler(clientSocket).start();
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    static class ClientHandler implements Runnable {
-        private final Socket socket;
+    private static class ClientHandler extends Thread {
+        private Socket socket;
         private String username;
-        private boolean authenticated = false;
-        private BufferedReader input;
-        private PrintWriter output;
 
         public ClientHandler(Socket socket) {
             this.socket = socket;
@@ -39,71 +35,101 @@ public class Server {
 
         @Override
         public void run() {
-            try {
-                input = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                output = new PrintWriter(socket.getOutputStream(), true);
+            try (DataInputStream in = new DataInputStream(socket.getInputStream());
+                 DataOutputStream out = new DataOutputStream(socket.getOutputStream())) {
 
+                // Authentication
+                out.writeUTF("Enter username:");
+                String username = in.readUTF();
+                out.writeUTF("Enter password:");
+                String password = in.readUTF();
 
-                while (!authenticated) {
-                    output.println("Enter username:");
-                    String user = input.readLine();
-                    output.println("Enter password:");
-                    String pass = input.readLine();
-
-                    if (users.containsKey(user) && users.get(user).equals(pass)) {
-                        authenticated = true;
-                        username = user;
-                        output.println("Authentication successful. Welcome, " + username);
-                        broadcast(username + " has joined the chat.");
-                    } else {
-                        output.println("Authentication failed. Try again.");
-                    }
+                if (USERS.containsKey(username) && USERS.get(username).equals(password)) {
+                    this.username = username;
+                    ACTIVE_CLIENTS.put(username, socket);
+                    out.writeUTF("Authentication successful. You are online.");
+                    System.out.println(username + " logged in.");
+                    broadcastStatus();
+                } else {
+                    out.writeUTF("Authentication failed. Disconnecting.");
+                    socket.close();
+                    return;
                 }
 
-
-                String message;
-                while ((message = input.readLine()) != null) {
-                    if ("exit".equalsIgnoreCase(message)) {
-                        output.println("Goodbye!");
-                        break;
-                    } else if (message.startsWith("@sendfile")) {
-                        receiveFile(message);
-                    } else {
-                        broadcast(username + ": " + message);
+                // Handle messages and file transfer
+                while (true) {
+                    String command = in.readUTF();
+                    if (command.startsWith("MESSAGE")) {
+                        String[] parts = command.split(" ", 3);
+                        if (parts.length < 3) {
+                            out.writeUTF("Invalid MESSAGE command. Format: MESSAGE <recipient> <message>");
+                        } else {
+                            String recipient = parts[1];
+                            String message = parts[2];
+                            sendMessage(recipient, message);
+                        }
+                    } else if (command.startsWith("FILE")) {
+                        String[] parts = command.split(" ", 2);
+                        if (parts.length < 2) {
+                            out.writeUTF("Invalid FILE command. Format: FILE <recipient>");
+                        } else {
+                            String recipient = parts[1];
+                            receiveAndSendFile(recipient, in);
+                        }
                     }
                 }
-
-
-                socket.close();
-                clients.remove(this);
-                broadcast(username + " has left the chat.");
             } catch (IOException e) {
-                e.printStackTrace();
+                System.out.println(username + " disconnected.");
+            } finally {
+                if (username != null) {
+                    ACTIVE_CLIENTS.remove(username);
+                    broadcastStatus();
+                }
             }
         }
 
-        private void receiveFile(String command) {
-            try {
-                output.println("Send file size:");
-                int fileSize = Integer.parseInt(input.readLine());
-                output.println("Send file data:");
+        private void broadcastStatus() {
+            String status = "Online users: " + String.join(", ", ACTIVE_CLIENTS.keySet());
+            ACTIVE_CLIENTS.values().forEach(socket -> {
+                try {
+                    new DataOutputStream(socket.getOutputStream()).writeUTF(status);
+                } catch (IOException ignored) {}
+            });
+        }
 
+        private void sendMessage(String recipient, String message) {
+            Socket recipientSocket = ACTIVE_CLIENTS.get(recipient);
+            if (recipientSocket != null) {
+                try {
+                    new DataOutputStream(recipientSocket.getOutputStream())
+                            .writeUTF("MESSAGE FROM " + username + ": " + message);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            } else {
+                try {
+                    new DataOutputStream(socket.getOutputStream())
+                            .writeUTF("User " + recipient + " is not online.");
+                } catch (IOException ignored) {}
+            }
+        }
+
+        private void receiveAndSendFile(String recipient, DataInputStream in) throws IOException {
+            Socket recipientSocket = ACTIVE_CLIENTS.get(recipient);
+            if (recipientSocket != null) {
+                DataOutputStream out = new DataOutputStream(recipientSocket.getOutputStream());
+                out.writeUTF("FILE FROM " + username);
+                int fileSize = in.readInt();
                 byte[] buffer = new byte[fileSize];
-                socket.getInputStream().read(buffer, 0, fileSize);
-                output.println("File received successfully!");
-            } catch (IOException e) {
-                output.println("File transfer failed.");
-            }
-        }
-
-        private void broadcast(String message) {
-            for (ClientHandler client : clients) {
-                if (client != this) {
-                    client.output.println(message);
-                }
+                in.readFully(buffer);
+                out.writeInt(fileSize);
+                out.write(buffer);
+            } else {
+                try {
+                    new DataOutputStream(socket.getOutputStream())
+                            .writeUTF("User " + recipient + " is not online.");
+                } catch (IOException ignored) {}
             }
         }
     }
 }
-
-
