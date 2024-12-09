@@ -8,7 +8,7 @@ public class Server {
     private static final Map<String, Socket> ACTIVE_CLIENTS = new HashMap<>();
 
     static {
-        // Predefined users (username, password)
+
         USERS.put("user1", "pass1");
         USERS.put("user2", "pass2");
     }
@@ -38,7 +38,7 @@ public class Server {
             try (DataInputStream in = new DataInputStream(socket.getInputStream());
                  DataOutputStream out = new DataOutputStream(socket.getOutputStream())) {
 
-                // Authentication
+
                 out.writeUTF("Enter username:");
                 String username = in.readUTF();
                 out.writeUTF("Enter password:");
@@ -56,7 +56,7 @@ public class Server {
                     return;
                 }
 
-                // Handle messages and file transfer
+
                 while (true) {
                     String command = in.readUTF();
                     if (command.startsWith("MESSAGE")) {

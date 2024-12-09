@@ -3,7 +3,7 @@ import java.net.*;
 import java.util.Scanner;
 
 public class Client {
-    private static final String SERVER_HOST = "64.187.248.231";
+    private static final String SERVER_HOST = "64.187.247.149"; //64.187.248.231
     private static final int SERVER_PORT = 2234;
 
     public static void main(String[] args) {
@@ -12,14 +12,14 @@ public class Client {
              DataOutputStream out = new DataOutputStream(socket.getOutputStream());
              Scanner scanner = new Scanner(System.in)) {
 
-            // Authentication
+
             System.out.println(in.readUTF());
             out.writeUTF(scanner.nextLine());
             System.out.println(in.readUTF());
             out.writeUTF(scanner.nextLine());
             System.out.println(in.readUTF());
 
-            // Message listener
+
             new Thread(() -> {
                 try {
                     while (true) {
@@ -30,7 +30,7 @@ public class Client {
                 }
             }).start();
 
-            // User commands
+
             while (true) {
                 System.out.println("Enter command (MESSAGE/FILE/EXIT):");
                 String command = scanner.nextLine();
