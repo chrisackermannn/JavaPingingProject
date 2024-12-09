@@ -3,7 +3,7 @@ import java.net.*;
 import java.util.Scanner;
 
 public class Client {
-    private static final String SERVER_HOST = "64.187.247.149"; //64.187.248.231
+    private static final String SERVER_HOST = "64.187.248.231"; //64.187.247.149
     private static final int SERVER_PORT = 2234;
 
     public static void main(String[] args) {
